@@ -81,7 +81,9 @@ Edit `.github/ha-monitor-config.json` in your repository. Here's the complete st
 
 ### Step 4: Enable GitHub Actions
 
-Go to the Actions tab in your repository and enable workflows. The monitoring will start automatically!
+1. Go to the Actions tab in your repository and enable workflows.
+2. Enable Actions HA workflow. The monitoring will start automatically according to cron schedule (default every 5 minutes).
+3. Run the Actions HA workflow manually to test if your configuraions are properly set.
 
 > **Note**: GitHub Actions' cron scheduler may have delays during peak times. For more consistent timing, you can use external cron services like cron-job.org to trigger your workflows.
 
