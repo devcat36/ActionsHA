@@ -1,0 +1,192 @@
+services:
+  ip-monitor:
+    image: python:3.11-slim
+    container_name: ddns-reporter
+    working_dir: /app
+    command: |
+      sh -c "
+      pip install --no-cache-dir requests && 
+      cat > /app/ip_monitor.py << 'EOF'
+      #!/usr/bin/env python3
+      import os
+      import sys
+      import json
+      import time
+      import logging
+      import requests
+      import base64
+      from typing import Optional
+
+      # Configure logging
+      logging.basicConfig(
+          level='INFO',
+          format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+      )
+      logger = logging.getLogger(__name__)
+
+      # IP check services with failover
+      IP_SERVICES = [
+          'https://ifconfig.me/ip',
+          'https://icanhazip.com',
+          'https://ipinfo.io/ip'
+      ]
+
+      # Configuration from environment
+      GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+      GITHUB_OWNER = os.getenv('GITHUB_OWNER')
+      GITHUB_REPO = os.getenv('GITHUB_REPO')
+      SERVER_NAME = os.getenv('SERVER_NAME')
+      CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '300'))
+
+      def get_public_ip() -> Optional[str]:
+          for service_url in IP_SERVICES:
+              try:
+                  logger.debug(f'Trying to get IP from {service_url}')
+                  response = requests.get(service_url, timeout=10)
+                  response.raise_for_status()
+                  
+                  # These services return plain text IP
+                  ip = response.text.strip()
+                  
+                  # Basic IP validation
+                  if not ip or ' ' in ip or '<' in ip:
+                      logger.warning(f'Invalid IP response from {service_url}: {ip}')
+                      continue
+                      
+                  logger.info(f'Successfully got IP {ip} from {service_url}')
+                  return ip
+                  
+              except requests.RequestException as e:
+                  logger.warning(f'Failed to get IP from {service_url}: {e}')
+                  continue
+          
+          logger.error('Failed to get IP from all services')
+          return None
+
+      def get_config_ip() -> Optional[str]:
+          '''Get the current IP for this server from GitHub config'''
+          try:
+              headers = {
+                  'Authorization': f'token {GITHUB_TOKEN}',
+                  'Accept': 'application/vnd.github.v3+json'
+              }
+              
+              config_path = '.github/ha-monitor-config.json'
+              api_url = f'https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/contents/{config_path}'
+              
+              response = requests.get(api_url, headers=headers, timeout=10)
+              response.raise_for_status()
+              
+              file_data = response.json()
+              config_content = base64.b64decode(file_data['content']).decode()
+              config = json.loads(config_content)
+              
+              # Find this server's IP
+              for server in config['servers']:
+                  if server['name'] == SERVER_NAME:
+                      ip = server['ip']
+                      logger.debug(f'Current config IP for {SERVER_NAME}: {ip}')
+                      return ip
+              
+              logger.warning(f'Server {SERVER_NAME} not found in config')
+              return None
+              
+          except Exception as e:
+              logger.error(f'Error fetching config IP: {e}')
+              return None
+
+      def trigger_github_workflow(new_ip: str) -> bool:
+          url = f'https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/workflows/update-server-ip.yml/dispatches'
+          
+          headers = {
+              'Accept': 'application/vnd.github.v3+json',
+              'Authorization': f'token {GITHUB_TOKEN}',
+              'Content-Type': 'application/json'
+          }
+          
+          payload = {
+              'ref': 'main',
+              'inputs': {
+                  'server_name': SERVER_NAME,
+                  'server_ip': new_ip
+              }
+          }
+          
+          try:
+              logger.info(f'Triggering workflow to update {SERVER_NAME} to {new_ip}')
+              response = requests.post(url, headers=headers, json=payload, timeout=30)
+              
+              if response.status_code == 204:
+                  logger.info('Successfully triggered GitHub workflow')
+                  return True
+              else:
+                  logger.error(f'Failed to trigger workflow: {response.status_code} - {response.text}')
+                  return False
+                  
+          except requests.RequestException as e:
+              logger.error(f'Error triggering workflow: {e}')
+              return False
+
+      def validate_config() -> bool:
+          if not GITHUB_TOKEN:
+              logger.error('GITHUB_TOKEN environment variable is required')
+              return False
+          
+          if not SERVER_NAME:
+              logger.error('SERVER_NAME environment variable is required')
+              return False
+          
+          logger.info(f'Configuration validated - Server: {SERVER_NAME}, Repo: {GITHUB_OWNER}/{GITHUB_REPO}')
+          return True
+
+      def main():
+          if not validate_config():
+              sys.exit(1)
+          
+          logger.info(f'Starting IP monitor for {SERVER_NAME}')
+          logger.info(f'Check interval: {CHECK_INTERVAL} seconds')
+          
+          while True:
+              try:
+                  # Get current public IP
+                  current_ip = get_public_ip()
+                  
+                  if not current_ip:
+                      logger.error('Could not determine public IP, will retry later')
+                      time.sleep(CHECK_INTERVAL)
+                      continue
+                  
+                  # Get IP from GitHub config
+                  config_ip = get_config_ip()
+                  
+                  if config_ip != current_ip:
+                      if config_ip:
+                          logger.info(f'IP changed from {config_ip} to {current_ip}')
+                      else:
+                          logger.info(f'New server detected: {SERVER_NAME} with IP {current_ip}')
+                      
+                      if trigger_github_workflow(current_ip):
+                          logger.info(f'IP update triggered for {SERVER_NAME}')
+                      else:
+                          logger.error('Failed to trigger workflow, will retry on next check')
+                  else:
+                      logger.debug(f'IP unchanged: {current_ip}')
+                  
+              except Exception as e:
+                  logger.error(f'Unexpected error in main loop: {e}', exc_info=True)
+              
+              logger.debug(f'Sleeping for {CHECK_INTERVAL} seconds')
+              time.sleep(CHECK_INTERVAL)
+
+      if __name__ == '__main__':
+          main()
+      EOF
+      python -u /app/ip_monitor.py
+      "
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_OWNER=${GITHUB_OWNER}
+      - GITHUB_REPO=${GITHUB_REPO}
+      - SERVER_NAME=${SERVER_NAME}
+      - CHECK_INTERVAL=${CHECK_INTERVAL}
+    restart: unless-stopped

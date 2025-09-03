@@ -1,0 +1,97 @@
+name: Update Server IP
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_name:
+        description: 'Server name (e.g., vps-kr-1)'
+        required: true
+        type: string
+      server_ip:
+        description: 'New IP address for the server'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-config:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Update server IP via GitHub API
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import sys
+          import json
+          import base64
+          import requests
+          
+          # Configuration
+          server_name = "${{ inputs.server_name }}"
+          server_ip = "${{ inputs.server_ip }}"
+          repo = "${{ github.repository }}"
+          token = os.environ['GITHUB_TOKEN']
+          config_path = ".github/ha-monitor-config.json"
+          
+          # GitHub API headers
+          headers = {
+              'Authorization': f'token {token}',
+              'Accept': 'application/vnd.github.v3+json'
+          }
+          
+          # Get current config file
+          api_url = f"https://api.github.com/repos/{repo}/contents/{config_path}"
+          response = requests.get(api_url, headers=headers)
+          
+          if response.status_code != 200:
+              print(f"❌ Failed to fetch config: {response.status_code} - {response.text}")
+              sys.exit(1)
+          
+          file_data = response.json()
+          sha = file_data['sha']
+          
+          # Decode and parse config
+          config_content = base64.b64decode(file_data['content']).decode()
+          config = json.loads(config_content)
+          
+          # Check if server exists
+          server_found = False
+          for server in config['servers']:
+              if server['name'] == server_name:
+                  old_ip = server['ip']
+                  server['ip'] = server_ip
+                  server_found = True
+                  print(f"✅ Updating {server_name}: {old_ip} -> {server_ip}")
+                  break
+          
+          if not server_found:
+              print(f"❌ Server '{server_name}' not found in configuration")
+              sys.exit(1)
+          
+          # Encode updated config
+          updated_content = json.dumps(config, indent=2)
+          encoded_content = base64.b64encode(updated_content.encode()).decode()
+          
+          # Update file via API
+          update_data = {
+              'message': f'Update IP for {server_name} to {server_ip}',
+              'content': encoded_content,
+              'sha': sha,
+              'branch': 'main'
+          }
+          
+          update_response = requests.put(api_url, headers=headers, json=update_data)
+          
+          if update_response.status_code in [200, 201]:
+              print(f"✅ Successfully updated config for {server_name}")
+              print(f"   New IP: {server_ip}")
+              print(f"   View at: https://github.com/{repo}/blob/main/{config_path}")
+          else:
+              print(f"❌ Failed to update config: {update_response.status_code} - {update_response.text}")
+              sys.exit(1)
+          EOF

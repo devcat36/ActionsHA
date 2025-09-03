@@ -1,0 +1,36 @@
+{
+  "logging": {
+    "enabled": true,
+    "repository": "yourusername/yourrepo"
+  },
+  "cloudflare": {
+    "enabled": true,
+    "api_token": "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+  },
+  "servers": [
+    {
+      "name": "server-01",
+      "ip": "1.2.3.4"
+    },
+    {
+      "name": "server-02",
+      "ip": "5.6.7.8"
+    }
+  ],
+  "services": [
+    {
+      "name": "my-api",
+      "hostname": "api.example.com",
+      "port": 8080,
+      "scheme": "https",
+      "healthcheck_path": "/health",
+      "servers": ["server-01", "server-02"],
+      "cloudflare": {
+        "update_dns": true,
+        "zone_id": "your_cloudflare_zone_id",
+        "proxied": true,
+        "ttl": 120
+      }
+    }
+  ]
+}
