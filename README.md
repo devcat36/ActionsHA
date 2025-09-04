@@ -24,9 +24,15 @@ ActionsHA provides high availability without the complexity or cost:
 
 ## 🔧 Quick Start
 
-### Step 1: Fork This Repository
+### Step 1: Create Your Repository
 
-Fork this repository to your GitHub account (preferably as a **private repository** to keep your server IPs and configuration private). The monitoring will run in your fork.
+For a **private repository** (recommended to keep your server IPs private):
+1. Clone this repository locally: `git clone https://github.com/devcat36/ActionsHA.git`
+2. Create a new private repository on your GitHub account
+3. Push the code to your new private repository
+
+For a public repository:
+- Simply fork this repository to your GitHub account
 
 ### Step 2: Add Your Cloudflare API Token
 
