@@ -71,7 +71,7 @@ Edit `.github/ha-monitor-config.json` in your repository. Here's the complete st
       "name": "my-api",                       // Service identifier
       "hostname": "api.example.com",          // Domain to manage
       "port": 8080,                           // Port (optional, defaults to 80/443)
-      "scheme": "https",                      // Protocol: http or https (optional)
+      "scheme": "http",                       // Protocol: http or https (optional)
       "healthcheck_path": "/health",          // Path for HTTP check (optional, omit for TCP-only)
       "servers": ["server-01", "server-02"],  // Servers running this service
       "cloudflare": {
@@ -116,11 +116,11 @@ Here's a full example with multiple services showing all available options:
     },
     {
       "name": "vps-backup",
-      "ip": "203.0.113.5"
+      "ip": "1.2.3.4"
     },
     {
       "name": "home-server",
-      "ip": "198.51.100.42"
+      "ip": "5.6.7.8"
     }
   ],
   "services": [
@@ -239,7 +239,6 @@ After your first workflow run, check your repository's README for a live dashboa
 - Individual server status
 - Recent failover events
 - DNS sync status
-- Historical uptime
 
 [View Example Dashboard](https://github.com/devcat36/ActionsHA/blob/main/example_dashboard.md)
 
